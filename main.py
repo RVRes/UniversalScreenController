@@ -2,6 +2,7 @@
 import sysm
 import time
 from pyscreeze import Box
+import threading
 
 
 class MFW():
@@ -94,37 +95,56 @@ class MFW():
         print(sysm.get_time() + '  Fishing. speed: ' + fish_per_minute + ' f/m  ', 'hard:', self.count['hard'],
               'success:', self.count['success'], 'fail:', self.count['fail'], 'skip', self.count['skip'])
         bobber_found_fails = 0
+        treads = []
+        bobber_found = False
         while True:
+            i = 0
             for bobber_img in self.bobbers_list:
                 bobber_found_fails += 1
                 if self.bobber_img:
                     bobber = self.bobber_img
                 else:
                     bobber = bobber_img
+                treads.append(
+                    threading.Thread(target=sysm.check_bobber, args=(self.imgdir + '/' + bobber, self.bobber_region)))
+                treads[i].start()
+                i += 1
 
-                bobber_found = sysm.check_bobber(self.imgdir + '/' + bobber, self.bobber_region)
-                if bobber_found:
-                    bobber_found_fails = 0
-                    if self.bobber_img != bobber:
-                        print(sysm.get_time() + '  ..new bobber: ' + bobber)
-                    self.bobber_img = bobber
-                if bobber_found_fails >= 130:
-                    self.bobber_img = None
-                    # print(sysm.get_time() + '  ..bobber fails >130' + bobber)
-                if stage == '2_catch_fish' and bobber_found_fails >= 10:
-                    stage = '1_lf_bite'
-                    self.count['fail'] += 1
-                    print(sysm.get_time() + '  ..fail')
-                if stage == '1_lf_bite' and bobber_found:
-                    stage = '2_catch_fish'
-                    print(sysm.get_time() + '  ..pulling')
-                    sysm.clickoncoord(self.push_rod_region)
-                if stage == '2_catch_fish':
-                    fish_cought = sysm.findpiconregion(self.fish_cought_img, self.game_area)
-                    if fish_cought:
-                        self.count['success'] += 1
-                        print(sysm.get_time() + '  ..success')
-                        return True
+            bobber_found = False
+            ii = -1
+            for i in range(len(self.bobbers_list)):
+                ans = False
+                try:
+                    ans = treads[i].join()
+                except:
+                    pass
+                if ans:
+                    bobber_found = True
+                    ii = i
+                    print(ii)
+            treads = []
+            if bobber_found:
+                bobber_found_fails = 0
+                if self.bobber_img != self.bobbers_list[ii]:
+                    print(sysm.get_time() + '  ..new bobber: ' + self.bobbers_list[ii])
+                self.bobber_img = self.bobbers_list[ii]
+            if bobber_found_fails >= 130:
+                self.bobber_img = None
+                # print(sysm.get_time() + '  ..bobber fails >130' + bobber)
+            if stage == '2_catch_fish' and bobber_found_fails >= 10:
+                stage = '1_lf_bite'
+                self.count['fail'] += 1
+                print(sysm.get_time() + '  ..fail')
+            if stage == '1_lf_bite' and bobber_found:
+                stage = '2_catch_fish'
+                print(sysm.get_time() + '  ..pulling')
+                sysm.clickoncoord(self.push_rod_region)
+            if stage == '2_catch_fish':
+                fish_cought = sysm.findpiconregion(self.fish_cought_img, self.game_area)
+                if fish_cought:
+                    self.count['success'] += 1
+                    print(sysm.get_time() + '  ..success')
+                    return True
 
     def close_buttons(self):
         a = False
