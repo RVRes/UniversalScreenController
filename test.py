@@ -135,10 +135,94 @@ import time
 #             sysm.clickonpic(self.grab_fish_img, self.game_area)
 #             time.sleep(1)
 
-print(time.monotonic())
+# print(time.monotonic())
+#
+# for j in range(2, 10):
+#     strn=''
+#     for i in range(1, 5):
+#         strn +=str(int((0.1 + i / j)*100)/100)+' '
+#     print(j, strn)
 
-for j in range(2, 10):
-    strn=''
-    for i in range(1, 5):
-        strn +=str(int((0.1 + i / j)*100)/100)+' '
-    print(j, strn)
+
+def pull_bobber(self):
+    def _pull_bobber_thread(bobber):
+        nonlocal bobber_found
+        nonlocal bobber_candidate
+        nonlocal stop_threads
+        while not stop_threads:
+            # print(sysm.get_time() + '  ' + bobber)
+            ans = sysm.check_bobber(self.imgdir + '/' + bobber, self.bobber_region)
+            if ans:
+                # print(sysm.get_time() + '  ' + bobber + ' TRUE!!')
+                bobber_found = True
+                if not bobber_candidate and not self.bobber_img:
+                    bobber_candidate = bobber
+
+    def _start_bobber_threads():
+        thr = []
+        nonlocal stop_threads
+        stop_threads = False
+        if not self.bobber_img:
+            for bobber_img in self.bobbers_list:
+                thr.append(threading.Thread(target=_pull_bobber_thread, args=(bobber_img,), daemon=True))
+                thr[-1].start()
+                time.sleep(0.05)
+        else:
+            for i in range(2):
+                thr.append(threading.Thread(target=_pull_bobber_thread, args=(self.bobber_img,), daemon=True))
+                thr[-1].start()
+                time.sleep(0.1)
+        return thr
+
+    def _stop_threads(thr):
+        # print(sysm.get_time() + '   останавливаем потоки')
+        nonlocal stop_threads
+        stop_threads = True
+        for th in thr:
+            th.join()
+            # print(sysm.get_time() + '   поток', th.is_alive())
+
+    stop_threads = False
+    bobber_candidate = None
+    bobber_found = False
+    self.print_status()
+    threads = _start_bobber_threads()
+    catch_timer = None  # таймер включается после нахождения поплавка, чтобы понять, поймана ли рыба.
+    bobber_last_seen_timer = time.monotonic() + 60  # если за 30 секунд не найдем поплавок, начнем перебор всех заново
+
+    # print(threads, type(threads[0]))
+    while True:
+        if bobber_found and not catch_timer:
+            print(sysm.get_time() + '  ..pulling')
+            sysm.clickoncoord(self.push_rod_region)
+            catch_timer = time.monotonic() + 7
+            bobber_last_seen_timer = time.monotonic() + 30
+
+        if catch_timer:
+            fish_cought = sysm.findpiconregion(self.fish_cought_img, self.game_area)
+            # print('проверяем поймана ли рыба')
+            if fish_cought:
+                # print('поймана')
+                self.count['success'] += 1
+                print(sysm.get_time() + '  ..success')
+                _stop_threads(threads)
+                return True
+            if bobber_candidate and not self.bobber_img:
+                self.bobber_img = bobber_candidate
+                bobber_candidate = None
+                _stop_threads(threads)
+                threads = _start_bobber_threads()
+                print(sysm.get_time() + '  ..new bobber: ', self.bobber_img)
+
+            if time.monotonic() > catch_timer:
+                # print('сбросили таймер поиска')
+                catch_timer = None
+                bobber_found = False
+                self.count['fail'] += 1
+                print(sysm.get_time() + '  ..fail')
+
+        if time.monotonic() > bobber_last_seen_timer and self.bobber_img:
+            # print ('сброслили поплавок')
+            self.bobber_img = None
+            _stop_threads(threads)
+            threads = _start_bobber_threads()

@@ -67,7 +67,7 @@ def makescreenshot(name):
 
 @time_of_function
 def check_bobber(what, where):
-    b1 = pyautogui.locateOnScreen(what, region=where, confidence=0.5, grayscale=True)
+    b1 = pyautogui.locateOnScreen(what, region=where, confidence=0.7, grayscale=True)
     if b1:
         return True
     else:
