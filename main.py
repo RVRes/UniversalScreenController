@@ -2,12 +2,23 @@
 import sysm
 import time
 from pyscreeze import Box
+import keyboard
 import threading
 from multiprocessing import Process, Queue, current_process, freeze_support
 
 
 class MFW():
     def __init__(self):
+        self.cpu_specs_func = {
+            'high_cpu': {
+                'pull_bobber': self.pull_bobber_highload
+            },
+            'weak_cpu': {
+                'pull_bobber': self.pull_bobber_weakload
+            },
+        }
+        self.cpu_specs = 'weak_cpu'
+        self.pull_bobber = self.cpu_specs_func[self.cpu_specs]['pull_bobber']
         self.imgdir = 'IMG'
         self.sceenshotsdir = 'SCREENSHOTS'
         self.bobber_img_prefix = 'bobber_'
@@ -17,7 +28,8 @@ class MFW():
         self.close_quest_img = self.imgdir + '/' + 'close_quest_completed.png'
         self.overextension_img = self.imgdir + '/' + 'overextension.png'
         self.count = {'hard': 0, 'success': 0, 'fail': 0, 'skip': 0}
-        self.game_size = {'x': 640, 'y': 360}
+        # self.game_size = {'x': 640, 'y': 360}
+        self.game_size = {'x': 400, 'y': 300}
         self.start_time = time.monotonic()
         self.game_area = None
         self.throw_rod_region = None
@@ -26,12 +38,17 @@ class MFW():
         self.extension_region = None
         self.bobber_img = None
         self.bobbers_list = None
+        self.sysexit_flag = False
 
     def start(self):
+        sysm.set_console_size_and_color(50, 20, 'color 0A')
         sysm.clearscreen()
+        t = self._start_keyboard_listener()
         print(sysm.get_time() + '  Starting the MFW game.')
+        print(f'{sysm.get_time()}  {t}')
         deadline = time.monotonic() + 2 * 60 * 60
         while time.monotonic() < deadline:
+            self._game_exit_check()
             fish_on_hook = False
             rod_throwed = self.throw_rod()
             if self.throw_rod_region and rod_throwed:
@@ -46,7 +63,43 @@ class MFW():
                 sysm.clickonpic(self.grab_fish_img, self.game_area)
                 time.sleep(1)
 
-    def init_regions(self):
+    def _start_keyboard_listener(self):
+        # keyboard.add_hotkey('Ctrl + e', lambda: print('Hello'))
+        keyboard.add_hotkey('Ctrl + e', self._game_exit_flag_on)
+        keyboard.add_hotkey('Ctrl + p', sysm.game_pause)
+        text = 'CTL+E to Exit, CTL+P to Pause'
+        return text
+
+    def _game_exit_flag_on(self):
+        print('exiting..')
+        self.sysexit_flag = True
+
+    def _game_exit_check(self):
+        if self.sysexit_flag:
+            sys.exit()
+
+    def _init_400x300(self):
+        # кнопка подъема удочки (равна кнопке заброса)
+        s = self.throw_rod_region
+        # sysm.screenshot_with_region(self.sceenshotsdir + '/scr_throw_rod_region.png', s)
+        self.push_rod_region = Box(left=s.left, top=s.top, width=s.width, height=s.height)
+        # экран игры
+        l = self.throw_rod_region.left - self.game_size['x'] + 60
+        t = self.throw_rod_region.top + self.throw_rod_region.height - self.game_size['y'] + 20
+        w = self.game_size['x'] - 4
+        h = self.game_size['y']
+        self.game_area = Box(left=l, top=t, width=w, height=h)
+        # sysm.screenshot_with_region(self.sceenshotsdir + '/scr_gamearea.png', self.game_area)
+        # зона погруженного поплавка
+        self.bobber_region = Box(left=s.left + 10, top=s.top - 124, width=31, height=29)
+        # sysm.screenshot_with_region(self.sceenshotsdir + '/scr_bobber_region.png', self.bobber_region)
+        # Составляем список поплавков
+        self.bobbers_list = sysm.find_files_list(self.bobber_img_prefix, self.imgdir)
+        # зона проверки натяжения удочки
+        self.extension_region = Box(left=s.left - 26, top=s.top - 117, width=80, height=44)
+        # sysm.screenshot_with_region(self.sceenshotsdir + '/scr_extension_region.png', self.extension_region)
+
+    def _init_640x360(self):
         # кнопка подъема удочки (равна кнопке заброса)
         s = self.throw_rod_region
         self.push_rod_region = Box(left=s.left, top=s.top, width=s.width, height=s.height)
@@ -65,6 +118,10 @@ class MFW():
         # зона проверки натяжения удочки
         self.extension_region = Box(left=s.left - 31, top=s.top - 181, width=105, height=76)
         # sysm.screenshot_with_region(self.sceenshotsdir + '/scr_region_4.png', self.extension_region)
+
+    def init_regions(self):
+        self._init_400x300()
+        # sys.exit(0)
 
     def throw_rod(self):
         if not self.throw_rod_region:
@@ -92,12 +149,8 @@ class MFW():
     def print_status(self):
         timedelta = (time.monotonic() - self.start_time) / 60
         fish_per_minute = str(int((self.count['success'] / timedelta) * 10) / 10)
-        print(sysm.get_time() +
-              '  Fishing. speed: ' + fish_per_minute +
-              ' f/m  ', 'hard:', self.count['hard'],
-              'success:', self.count['success'],
-              'fail:', self.count['fail'],
-              'skip', self.count['skip'])
+        print(f"{sysm.get_time()}  Fishing. speed: {fish_per_minute} f/m  miss: {self.count['fail']}"
+              f"\n          hard: {self.count['hard']}  success: {self.count['success']}  skip: {self.count['skip']}")
 
     def _pull_bobber_thread(self, input, output):
         for args in iter(input.get, 'STOP'):
@@ -106,17 +159,47 @@ class MFW():
             if ans:
                 output.put(bobber)
 
+    def _bobber_is_eaten(self, deltatime):
+        print(sysm.get_time() + '  ..pulling')
+        sysm.clickoncoord(self.push_rod_region)
+        catch_timer = time.monotonic() + deltatime
 
+        while time.monotonic() < catch_timer:
+            fish_cought = sysm.findpiconregion(self.fish_cought_img, self.game_area)
+            if fish_cought:
+                # print('поймана')
+                self.count['success'] += 1
+                print(sysm.get_time() + '  ..success')
+                return True
+        # не поймали
+        self.count['fail'] += 1
+        print(sysm.get_time() + '  ..fail')
+        return False
 
-    def pull_bobber(self):
+    def _update_bobber_img(self, bobber_img):
+        if self.bobber_img != bobber_img:
+            print(f'{sysm.get_time()}  ..new bobber:  {bobber_img}')
+            self.bobber_img = bobber_img
+
+    def _drop_wrong_bobbers(self):
+        # прибиваем поплавки, которые срабатывают не в нужный момент
+        for i in range(2):
+            for bobber_img in self.bobbers_list:
+                if sysm.check_bobber(f'{self.imgdir}/{bobber_img}', self.bobber_region):
+                    self.bobbers_list.remove(bobber_img)
+                    # print(f'.. убрали {bobber_img}')
+
+    def pull_bobber_highload(self):
 
         NUMBER_OF_PROCESSES = 2
         task_queue = Queue()
         done_queue = Queue()
+        delta_timer_catch = 7
         self.print_status()
 
         bobber_last_seen_timer = time.monotonic() + 60  # если за 30 секунд не найдем поплавок, начнем перебор всех заново
 
+        self._drop_wrong_bobbers()
 
         # print('запускаем процесс')
         for i in range(NUMBER_OF_PROCESSES):
@@ -128,6 +211,7 @@ class MFW():
 
             # ищем поплавок под водой. когда найдем, выходим
             while done_queue.qsize() == 0:
+                self._game_exit_check()
                 if task_queue.qsize() < NUMBER_OF_PROCESSES:
                     for bobber_img in self.bobbers_list:
                         if self.bobber_img:
@@ -141,28 +225,47 @@ class MFW():
             # проверяем смену поплавка
             bobber_last_seen_timer = time.monotonic() + 60
             bobber_img = done_queue.get().split('/')[1]
-            if self.bobber_img != bobber_img:
-                print(sysm.get_time() + '  ..new bobber: ', bobber_img)
-                self.bobber_img = bobber_img
+            self._update_bobber_img(bobber_img)
 
             # проверяем поймана ли рыба
-            print(sysm.get_time() + '  ..pulling')
-            sysm.clickoncoord(self.push_rod_region)
-            catch_timer = time.monotonic() + 7
+            if self._bobber_is_eaten(delta_timer_catch):
+                for i in range(NUMBER_OF_PROCESSES):
+                    task_queue.put('STOP')
+                return True
 
-            while time.monotonic() < catch_timer:
-                fish_cought = sysm.findpiconregion(self.fish_cought_img, self.game_area)
-                if fish_cought:
-                    # print('поймана')
-                    self.count['success'] += 1
-                    print(sysm.get_time() + '  ..success')
-                    for i in range(NUMBER_OF_PROCESSES):
-                        task_queue.put('STOP')
-                    return True
-            # не поймали
-            self.count['fail'] += 1
-            print(sysm.get_time() + '  ..fail')
+    def pull_bobber_weakload(self):
+        def get_next_bobber(bobber=None):
+            if self.bobber_img:
+                return self.bobber_img
+            count = (len(self.bobbers_list) - 1 if not bobber else self.bobbers_list.index(bobber))
+            count = (count + 1, 0)[count == len(self.bobbers_list) - 1]
+            return self.bobbers_list[count]
 
+        delta_timer_catch = 7
+        delta_timer = 60
+        bobber_last_seen_timer = time.monotonic() + delta_timer
+        bobber_img = self.bobber_img
+        bobber_found = False
+
+        self._drop_wrong_bobbers()
+        self.print_status()
+        while True:
+            while not bobber_found:
+                self._game_exit_check()
+                bobber_img = get_next_bobber(bobber_img)
+                bobber_found = sysm.check_bobber(f'{self.imgdir}/{bobber_img}', self.bobber_region)
+                # print(f'{self.imgdir}/{bobber_img}')
+                if time.monotonic() > bobber_last_seen_timer and self.bobber_img:
+                    self.bobber_img = None
+
+            # print(f'{self.imgdir}/{bobber_img}')
+            bobber_last_seen_timer = time.monotonic() + delta_timer
+            self._update_bobber_img(bobber_img)
+
+            # проверяем поймана ли рыба
+            if self._bobber_is_eaten(delta_timer_catch):
+                return True
+            bobber_found = False
 
     def close_buttons(self):
         a = False

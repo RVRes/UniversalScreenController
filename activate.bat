@@ -1,1 +1,0 @@
-C:\Users\SONY\Documents\Python projects\usc\venv\Scripts\activate.bat

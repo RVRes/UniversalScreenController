@@ -3,6 +3,7 @@ from PIL import Image, ImageDraw
 from Logger import time_of_function
 import os
 import time
+import sys
 from pyscreeze import Box
 
 confidence = 0.7
@@ -37,11 +38,21 @@ def clearscreen():
     os.system('cls')
 
 
+def set_console_size_and_color(sizeX: int = 120, sizeY: int = 30, color: str = 'color 07'):
+    os.system(f'mode {sizeX},{sizeY}')
+    os.system(color)
+
+
+def game_pause():
+    os.system("pause")
+
+
 @time_of_function
 def clickoncoord(where):
     button_x = where.left + int(where.width / 2)
     button_y = where.top + int(where.height / 2)
     pyautogui.click(button_x, button_y)
+
 
 @time_of_function
 def mousedownoncoord(where):
@@ -54,11 +65,13 @@ def mousedownoncoord(where):
 def mouseup():
     pyautogui.mouseUp()
 
+
 @time_of_function
 def clickandholdoncoord(where, duration):
     mousedownoncoord(where)
     time.sleep(duration)
     mouseup()
+
 
 @time_of_function
 def makescreenshot(name):
@@ -67,7 +80,7 @@ def makescreenshot(name):
 
 @time_of_function
 def check_bobber(what, where):
-    b1 = pyautogui.locateOnScreen(what, region=where, confidence=0.7, grayscale=True)
+    b1 = pyautogui.locateOnScreen(what, region=where, confidence=0.6, grayscale=True)
     if b1:
         return True
     else:
@@ -106,5 +119,3 @@ def screenshot_with_region(name, region):
         pyautogui.screenshot(name)
         region = (region.left, region.top, region.left + region.width, region.top + region.height)
         save_zone_with_rectangle(name, region)
-
-
